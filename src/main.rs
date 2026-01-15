@@ -40,6 +40,9 @@ struct Args {
 
     #[arg(long, default_value = "3")]
     index_size: usize,
+    
+    #[arg(long, default_value = "500")]
+    chunk_size: usize,
 }
 
 async fn with_provider(
@@ -92,6 +95,7 @@ async fn main() -> eyre::Result<()> {
         args.custody_address,
         args.collateral_address,
         args.vendor_id,
+        args.chunk_size,
     );
 
     info!(
