@@ -1,0 +1,91 @@
+use crate::common::uint::{read_u128, write_u128};
+
+pub struct Labels {
+    pub data: Vec<u128>,
+}
+
+impl Labels {
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
+    pub fn from_vec_u128(data: Vec<u128>) -> Self {
+        Self { data }
+    }
+
+    pub fn into_vec_u128(self) -> Vec<u128> {
+        self.data
+    }
+
+    pub fn to_vec_u128_cloned(self) -> Vec<u128> {
+        self.data.clone()
+    }
+
+    pub fn is_valid_vec(data_ref: &impl AsRef<[u8]>) -> bool {
+        let data = data_ref.as_ref();
+        let len = data.len();
+        0 == len % size_of::<u128>()
+    }
+
+    pub fn len_from_vec(data_ref: &impl AsRef<[u8]>) -> Option<usize> {
+        let data = data_ref.as_ref();
+        let len = data.len();
+
+        if 0 != len % size_of::<u128>() {
+            return None;
+        }
+
+        let vec_len = len / size_of::<u128>();
+        Some(vec_len)
+    }
+
+    pub fn from_vec(data_ref: impl AsRef<[u8]>) -> Self {
+        let mut this = Self::new();
+        let data = data_ref.as_ref();
+        let len = data.len();
+
+        if 0 != len % size_of::<u128>() {
+            panic!("Incorrect data length");
+        };
+
+        let vec_len = len / size_of::<u128>();
+        let mut data_offet = 0;
+
+        for _ in 0..vec_len {
+            let data_start = data_offet;
+            data_offet += size_of::<u128>();
+            let val = read_u128(&data[data_start..data_offet]);
+            this.data.push(val);
+        }
+        this
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        for val in &self.data {
+            write_u128(*val, &mut output);
+        }
+        output
+    }
+}
+
+#[macro_export]
+macro_rules! label {
+    () => {
+        0u128
+    };
+    ($num:expr) => {
+        ($num as u128)
+    };
+}
+
+impl core::fmt::Display for Labels {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut sepa = "";
+        for x in &self.data {
+            write!(f, "{}{}", sepa, x,)?;
+            sepa = ",";
+        }
+        Ok(())
+    }
+}
