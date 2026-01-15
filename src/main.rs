@@ -5,44 +5,40 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use clap::Parser;
-use conveyor::{
-    app::App,
-    keeper::{Keeper, KeeperMessage},
-    pulley::{ChainMessage, Pulley},
-    vendor::Vendor,
-};
+use conveyor::{app::App, keeper::Keeper, pulley::Pulley, vendor::Vendor};
+use eyre::bail;
+use tracing::{error, info};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 // --- 2. CLI Arguments ---
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Conveyor: Off-chain client for VaultWorks")]
 struct Args {
-    #[arg(
-        short,
-        long,
-        env = "RPC_URL",
-        default_value = "http://http://localhost:8547"
-    )]
+    #[arg(long, env = "RPC_URL", default_value = "http://http://localhost:8547")]
     rpc_url: String,
 
-    #[arg(short, long, env = "PRIVATE_KEY")]
+    #[arg(long, env = "PRIVATE_KEY")]
     private_key: String,
 
-    #[arg(short, long, env = "CASTLE_ADDRESS")]
+    #[arg(long, env = "CASTLE_ADDRESS")]
     castle_address: Address,
 
-    #[arg(short, long, env = "CUSTODY_ADDRESS")]
+    #[arg(long, env = "CUSTODY_ADDRESS")]
     custody_address: Address,
 
-    #[arg(short, long, default_value = "1")]
+    #[arg(long, env = "COLLATERAL_ADDRESS")]
+    collateral_address: Address,
+
+    #[arg(long, default_value = "1")]
     vendor_id: u128,
 
-    #[arg(short, long, default_value = "1001")]
+    #[arg(long, default_value = "1001")]
     index_id: u128,
 
-    #[arg(short, long, default_value = "5")]
+    #[arg(long, default_value = "5")]
     market_size: usize,
 
-    #[arg(short, long, default_value = "3")]
+    #[arg(long, default_value = "3")]
     index_size: usize,
 }
 
@@ -61,23 +57,78 @@ async fn with_provider(
     Ok(provider)
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let args = Args::parse();
+    init_tracing();
+
+    let args = Args::try_parse()?;
+
     let provider = with_provider(args.rpc_url, args.private_key).await?;
 
-    let mut keeper = Keeper::new(provider.clone());
-    let mut vendor = Vendor::new(provider.clone());
+    info!(
+        wallet= %provider.default_signer_address(),
+        "Provider connected"
+    );
 
-    keeper.setup().await?;
+    let mut keeper = Keeper::new(
+        provider.clone(),
+        args.castle_address,
+        args.custody_address,
+        args.collateral_address,
+        args.index_id,
+        args.vendor_id,
+    );
+
+    let mut vendor = Vendor::new(
+        provider.clone(),
+        args.castle_address,
+        args.custody_address,
+        args.collateral_address,
+        args.vendor_id,
+    );
+
+    info!(
+        castle_address = %args.castle_address,
+        custody_address = %args.custody_address,
+        collateral_address = %args.collateral_address,
+        index_id = %args.index_id,
+        vendor_id = %args.vendor_id,
+        "Configured Keeper & Vendor"
+    );
+
     vendor.setup(args.market_size).await?;
 
-    let pulley = Pulley::new(provider, keeper.get_vault_address()).await?;
+    info!(
+        market_size = %args.market_size,
+        "Configured Market"
+    );
+
+    keeper.setup(args.index_size).await?;
+
+    let vault_address = keeper.get_vault_address();
+    if vault_address.is_zero() {
+        bail!("Vault address is zero")
+    }
+
+    info!(
+        index_size = %args.index_size,
+        %vault_address,
+        "Configured Index / Vault"
+    );
+
+    let pulley = Pulley::new(provider, vault_address).await?;
 
     let mut app = App::new(keeper, vendor, pulley);
 
     if let Err(err) = app.run().await {
-        eprintln!("Error while running app: {:?}", err);
+        error!("Error while running app: {:?}", err);
     }
 
     Ok(())

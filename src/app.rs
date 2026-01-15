@@ -1,5 +1,5 @@
 use crate::{
-    keeper::{Keeper, KeeperMessage},
+    keeper::Keeper,
     pulley::{ChainMessage, Pulley},
     vendor::Vendor,
 };
@@ -44,7 +44,13 @@ where
                     %collateral,
                     "ChainMessage::BuyOrder"
                 );
-                self.keeper.buy_order().await?;
+                if self.keeper.get_index_id() == index_id
+                    && self.vendor.get_vendor_id() == vendor_id
+                {
+                    let assets = self.keeper.get_assets(index_id);
+                    self.vendor.update_market(assets).await?;
+                    self.keeper.buy_order().await?;
+                }
             }
             ChainMessage::SellOrder {
                 keeper,
@@ -61,7 +67,13 @@ where
                     %itp_amount,
                     "ChainMessage::SellOrder"
                 );
-                self.keeper.sell_order().await?;
+                if self.keeper.get_index_id() == index_id
+                    && self.vendor.get_vendor_id() == vendor_id
+                {
+                    let assets = self.keeper.get_assets(index_id);
+                    self.vendor.update_market(assets).await?;
+                    self.keeper.sell_order().await?;
+                }
             }
             ChainMessage::Acquisition {
                 controller,
@@ -80,7 +92,9 @@ where
                     %minted,
                     "ChainMessage::Acquisition"
                 );
-                self.vendor.update_supply().await?;
+                if self.vendor.get_vendor_id() == vendor_id {
+                    self.vendor.update_supply().await?;
+                }
             }
             ChainMessage::Disposal {
                 controller,
@@ -99,7 +113,9 @@ where
                     %gains,
                     "ChainMessage::Disposal"
                 );
-                self.vendor.update_supply().await?;
+                if self.vendor.get_vendor_id() == vendor_id {
+                    self.vendor.update_supply().await?;
+                }
             }
         }
         Ok(())
@@ -113,14 +129,6 @@ where
                         self.process_chain_message(message).await?;
                     }
                 }
-                Ok(message) = self.keeper.get_message() => {
-                    match message {
-                        KeeperMessage::AssetsQuoteRequest { assets } => {
-                            self.vendor.update_market(assets).await?;
-                            self.keeper.update_quote().await?;
-                        },
-                    }
-                },
             }
         }
     }

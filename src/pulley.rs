@@ -49,8 +49,7 @@ pub struct Pulley<P>
 where
     P: Provider + WalletProvider + Clone + 'static,
 {
-    provider: P,
-    vault_address: Address,
+    _provider: P,
     stream: PollerStream<Vec<Log>>,
 }
 
@@ -69,8 +68,7 @@ where
         let stream = provider.watch_logs(&filter).await?.into_stream();
 
         Ok(Self {
-            provider,
-            vault_address,
+            _provider: provider,
             stream,
         })
     }

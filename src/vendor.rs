@@ -1,4 +1,7 @@
-use alloy::providers::{Provider, WalletProvider};
+use alloy::{
+    primitives::Address,
+    providers::{Provider, WalletProvider},
+};
 
 use crate::common::{labels::Labels, vector::Vector};
 
@@ -7,6 +10,10 @@ where
     P: Provider + WalletProvider + Clone + 'static,
 {
     provider: P,
+    castle_address: Address,
+    custody_address: Address,
+    collateral_address: Address,
+    vendor_id: u128,
 
     assets: Labels,
     margin: Vector,
@@ -19,9 +26,19 @@ impl<P> Vendor<P>
 where
     P: Provider + WalletProvider + Clone + 'static,
 {
-    pub fn new(provider: P) -> Self {
+    pub fn new(
+        provider: P,
+        castle_address: Address,
+        custody_address: Address,
+        collateral_address: Address,
+        vendor_id: u128,
+    ) -> Self {
         Self {
             provider,
+            castle_address,
+            custody_address,
+            collateral_address,
+            vendor_id,
             assets: Labels::new(),
             margin: Vector::new(),
             market_data: Vector::new(),
@@ -30,15 +47,21 @@ where
         }
     }
 
-    pub async fn setup(&mut self, num_assets: usize) -> eyre::Result<()> {
+    pub fn get_vendor_id(&self) -> u128 {
+        self.vendor_id
+    }
+
+    pub async fn setup(&mut self, market_size: usize) -> eyre::Result<()> {
         Ok(())
     }
 
-    pub async fn update_market(&mut self, assets: Labels) -> eyre::Result<()> {
+    pub async fn update_market(&mut self, assets: &Labels) -> eyre::Result<()> {
+        println!("Handle: UpdateMarket");
         Ok(())
     }
 
     pub async fn update_supply(&mut self) -> eyre::Result<()> {
+        println!("Handle: UpdateSupply");
         // let banker = IBanker::new(args.castle_address, &provider);
 
         // let market_assets = Vector { data: vec![] };
