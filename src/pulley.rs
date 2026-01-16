@@ -47,14 +47,16 @@ pub enum ChainMessage {
         gains: u128,
     },
     AcquisitionClaim {
-        controller: Address,
+        keeper: Address,
+        trader: Address,
         index_id: u128,
         vendor_id: u128,
         remain: u128,
         spent: u128,
     },
     DisposalClaim {
-        controller: Address,
+        keeper: Address,
+        trader: Address,
         index_id: u128,
         vendor_id: u128,
         itp_remain: u128,
@@ -74,7 +76,7 @@ impl Pulley {
     where
         P: Provider + WalletProvider + Clone + 'static,
     {
-        info!("Pulley loop started...");
+        info!("🏎️  Pulley loop started...");
 
         let filter = Filter::new().address(vault_address).events(vec![
             IVaultNativeOrders::BuyOrder::SIGNATURE,
@@ -152,7 +154,8 @@ impl Pulley {
                             let event = event.data();
                             sender
                                 .send(ChainMessage::AcquisitionClaim {
-                                    controller: event.controller,
+                                    keeper: event.keeper,
+                                    trader: event.trader,
                                     index_id: event.index_id,
                                     vendor_id: event.vendor_id,
                                     remain: event.remain,
@@ -164,7 +167,8 @@ impl Pulley {
                             let event = event.data();
                             sender
                                 .send(ChainMessage::DisposalClaim {
-                                    controller: event.controller,
+                                    keeper: event.keeper,
+                                    trader: event.trader,
                                     index_id: event.index_id,
                                     vendor_id: event.vendor_id,
                                     itp_remain: event.itp_remain,

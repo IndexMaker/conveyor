@@ -35,15 +35,18 @@ where
                     %index_id,
                     %vendor_id,
                     %collateral,
-                    "ChainMessage::BuyOrder"
+                    "⛓️ ChainMessage::BuyOrder"
                 );
                 if self.keeper.get_index_id() == index_id
                     && self.vendor.get_vendor_id() == vendor_id
                 {
                     let assets = self.keeper.get_assets();
+                    self.keeper.log_trader_order(trader).await?;
+                    self.keeper.log_pending_order().await?;
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
                     self.keeper.buy_order().await?;
+                    self.keeper.log_pending_order().await?;
                 }
             }
             ChainMessage::SellOrder {
@@ -59,15 +62,18 @@ where
                     %index_id,
                     %vendor_id,
                     %itp_amount,
-                    "ChainMessage::SellOrder"
+                    "⛓️ ChainMessage::SellOrder"
                 );
                 if self.keeper.get_index_id() == index_id
                     && self.vendor.get_vendor_id() == vendor_id
                 {
                     let assets = self.keeper.get_assets();
+                    self.keeper.log_trader_order(trader).await?;
+                    self.keeper.log_pending_order().await?;
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
                     self.keeper.sell_order().await?;
+                    self.keeper.log_pending_order().await?;
                 }
             }
             ChainMessage::Acquisition {
@@ -85,7 +91,7 @@ where
                     %remain,
                     %spent,
                     %minted,
-                    "ChainMessage::Acquisition"
+                    "⛓️ ChainMessage::Acquisition"
                 );
                 if self.vendor.get_vendor_id() == vendor_id {
                     self.vendor.update_supply().await?;
@@ -106,54 +112,62 @@ where
                     %remain,
                     %burned,
                     %gains,
-                    "ChainMessage::Disposal"
+                    "⛓️ ChainMessage::Disposal"
                 );
                 if self.vendor.get_vendor_id() == vendor_id {
                     self.vendor.update_supply().await?;
                 }
             }
             ChainMessage::AcquisitionClaim {
-                controller,
+                keeper,
+                trader,
                 index_id,
                 vendor_id,
                 remain,
                 spent,
             } => {
                 info!(
-                    %controller,
+                    %keeper,
+                    %trader,
                     %index_id,
                     %vendor_id,
                     %remain,
                     %spent,
-                    "ChainMessage::AcquisitionClaim"
+                    "⛓️ ChainMessage::AcquisitionClaim"
                 );
                 if 100 < remain {
                     let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
                     self.keeper.buy_order().await?;
+                    self.keeper.log_pending_order().await?;
+                    self.keeper.log_trader_order(trader).await?;
                 }
             }
             ChainMessage::DisposalClaim {
-                controller,
+                keeper,
+                trader,
                 index_id,
                 vendor_id,
                 itp_remain,
                 itp_burned,
             } => {
                 info!(
-                    %controller,
+                    %keeper,
+                    %trader,
                     %index_id,
                     %vendor_id,
                     %itp_remain,
                     %itp_burned,
-                    "ChainMessage::DisposalClaim"
+                    "⛓️ ChainMessage::DisposalClaim"
                 );
                 if 100 < itp_remain {
                     let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
                     self.keeper.sell_order().await?;
+                    self.keeper.log_pending_order().await?;
+                    self.keeper.log_trader_order(trader).await?;
                 }
             }
         }
@@ -165,7 +179,7 @@ where
         mut recv: UnboundedReceiver<ChainMessage>,
         cancel: CancellationToken,
     ) -> eyre::Result<()> {
-        info!("App loop started...");
+        info!("✅ App loop started...");
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {

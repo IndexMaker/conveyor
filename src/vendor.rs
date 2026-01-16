@@ -7,10 +7,13 @@ use itertools::Itertools;
 use tracing::{debug, info};
 
 use crate::{
-    common::{labels::Labels, vector::Vector},
-    constants::{DEMAND_LONG_OFFSET, DEMAND_SHORT_OFFSET},
+    common::{
+        constants::{DEMAND_LONG_OFFSET, DEMAND_SHORT_OFFSET},
+        labels::Labels,
+        rand_value::ValueGen,
+        vector::Vector,
+    },
     interfaces::{banker::IBanker, steward::ISteward},
-    rand_value::ValueGen,
 };
 
 pub struct Vendor<P>
@@ -141,7 +144,7 @@ where
     }
 
     pub async fn update_market(&mut self, assets: &Labels) -> eyre::Result<()> {
-        info!("Handle: UpdateMarket");
+        info!("📈 Handle: UpdateMarket");
         for chunk in assets.data.chunks(self.chunk_size) {
             self._update_market(chunk).await?;
         }
@@ -199,7 +202,7 @@ where
     }
 
     pub async fn update_supply(&mut self) -> eyre::Result<()> {
-        info!("Handle: UpdateSupply");
+        info!("🚛 Handle: UpdateSupply");
         let steward = ISteward::new(self.castle_address, &self.provider);
 
         let demand_bytes = steward

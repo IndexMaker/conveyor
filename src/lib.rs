@@ -17,15 +17,15 @@ pub mod interfaces {
 
 pub mod common {
     pub mod amount;
+    pub mod constants;
     pub mod labels;
+    pub mod rand_pick_assets;
+    pub mod rand_value;
     pub mod uint;
     pub mod vector;
 }
 
 pub mod app;
-pub mod constants;
 pub mod keeper;
 pub mod pulley;
-pub mod rand_value;
-pub mod rand_pick_assets;
 pub mod vendor;

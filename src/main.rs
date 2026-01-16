@@ -19,7 +19,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Conveyor: Off-chain client for VaultWorks")]
 struct Args {
-    #[arg(long, env = "RPC_URL", default_value = "http://http://localhost:8547")]
+    #[arg(long, env = "RPC_URL", default_value = "http://localhost:8547")]
     rpc_url: String,
 
     #[arg(long, env = "PRIVATE_KEY")]
@@ -82,7 +82,7 @@ async fn main() -> eyre::Result<()> {
 
     info!(
         wallet= %provider.default_signer_address(),
-        "Provider connected"
+        "🔌 Provider connected"
     );
 
     let mut keeper = Keeper::new(
@@ -109,7 +109,7 @@ async fn main() -> eyre::Result<()> {
         collateral_address = %args.collateral_address,
         index_id = %args.index_id,
         vendor_id = %args.vendor_id,
-        "Configured Keeper & Vendor"
+        "🔧 Configured Keeper & Vendor"
     );
 
     vendor.setup(args.market_size).await?;
@@ -128,8 +128,8 @@ async fn main() -> eyre::Result<()> {
 
     info!(
         index_size = %args.index_size,
-        %vault_address,
-        "Configured Index / Vault"
+        vault_address = %format!("👉 {}", vault_address),
+        "🏦 Configured Index / Vault"
     );
 
     info!("Cranking pulley...");
@@ -144,7 +144,7 @@ async fn main() -> eyre::Result<()> {
         cancel_token.clone(),
     ));
 
-    info!("Starting app...");
+    info!("🚦 Starting app...");
 
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -165,7 +165,7 @@ async fn main() -> eyre::Result<()> {
         error!("Error while running app: {:?}", err);
     }
 
-    info!("Terminating app...");
+    info!("🚨 Terminating app...");
     if let Err(err) = pulley_task.await {
         error!("Error while terminating: {:?}", err);
     }

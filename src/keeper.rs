@@ -7,9 +7,21 @@ use itertools::Itertools;
 use tracing::{debug, info};
 
 use crate::{
-    common::{amount::Amount, labels::Labels, vector::Vector}, interfaces::{
-        banker::IBanker, guildmaster::IGuildmaster, vault_native_orders::IVaultNativeOrders,
-    }, rand_pick_assets::rand_pick_assets, rand_value::ValueGen
+    common::{
+        amount::Amount,
+        constants::{
+            ORDER_BURNED_OFFSET, ORDER_COLLATERAL_OFFSET, ORDER_LOCKED_OFFSET, ORDER_MINTED_OFFSET,
+            ORDER_SPENT_OFFSET, ORDER_WITHDRAW_OFFSET,
+        },
+        labels::Labels,
+        rand_pick_assets::rand_pick_assets,
+        rand_value::ValueGen,
+        vector::Vector,
+    },
+    interfaces::{
+        banker::IBanker, guildmaster::IGuildmaster, steward::ISteward,
+        vault_native_orders::IVaultNativeOrders,
+    },
 };
 
 pub struct Keeper<P>
@@ -179,7 +191,7 @@ where
     }
 
     pub async fn update_quote(&mut self) -> eyre::Result<()> {
-        info!("Handle: UpdateQutote");
+        info!("🏷️  Handle: UpdateQutote");
         let banker = IBanker::new(self.castle_address, &self.provider);
 
         info!("Updating quote...");
@@ -204,7 +216,7 @@ where
     }
 
     pub async fn buy_order(&mut self) -> eyre::Result<()> {
-        info!("Handle: BuyOrder");
+        info!("🚚 Handle: BuyOrder");
         let vault = IVaultNativeOrders::new(self.vault_address, &self.provider);
         let keeper = self.provider.default_signer_address();
 
@@ -229,7 +241,7 @@ where
     }
 
     pub async fn sell_order(&mut self) -> eyre::Result<()> {
-        info!("Handle: SellOrder");
+        info!("🚚 Handle: SellOrder");
         let vault = IVaultNativeOrders::new(self.vault_address, &self.provider);
         let keeper = self.provider.default_signer_address();
 
@@ -249,6 +261,37 @@ where
         }
 
         debug!("Update pending Sell order receipt: {:?}", receipt);
+
+        Ok(())
+    }
+
+    pub async fn log_pending_order(&self) -> eyre::Result<()> {
+        self.log_trader_order(self.provider.default_signer_address())
+            .await?;
+        Ok(())
+    }
+
+    pub async fn log_trader_order(&self, trader: Address) -> eyre::Result<()> {
+        let steward = ISteward::new(self.castle_address, &self.provider);
+
+        let order_bytes = steward
+            .getTraderOrder(self.index_id, trader)
+            .call()
+            .await
+            .context("Failed to obtain trader order")?;
+
+        let order = Vector::from_vec(order_bytes);
+
+        info!(
+            %trader,
+            collateral = %order.data[ORDER_COLLATERAL_OFFSET],
+            spent = %order.data[ORDER_SPENT_OFFSET],
+            minted = %order.data[ORDER_MINTED_OFFSET],
+            locked = %order.data[ORDER_LOCKED_OFFSET],
+            burned = %order.data[ORDER_BURNED_OFFSET],
+            withdraw = %order.data[ORDER_WITHDRAW_OFFSET],
+            "💰 Trading Order"
+        );
 
         Ok(())
     }
