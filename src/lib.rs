@@ -27,4 +27,5 @@ pub mod constants;
 pub mod keeper;
 pub mod pulley;
 pub mod rand_value;
+pub mod rand_pick_assets;
 pub mod vendor;

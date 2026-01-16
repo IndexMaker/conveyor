@@ -53,12 +53,20 @@ where
         self.vendor_id
     }
 
-    pub fn get_assets(&self) -> &Labels {
+    pub fn get_market_assets(&self) -> &Labels {
         &self.market_assets
     }
 
+    pub fn get_custody_address(&self) -> Address {
+        self.custody_address
+    }
+
+    pub fn get_collateral_address(&self) -> Address {
+        self.collateral_address
+    }
+
     pub async fn setup(&mut self, market_size: usize) -> eyre::Result<()> {
-        println!("Handle: Setup");
+        info!("Handle: Vendor Setup");
 
         let assets = Labels {
             data: (1..market_size + 1)
@@ -133,7 +141,7 @@ where
     }
 
     pub async fn update_market(&mut self, assets: &Labels) -> eyre::Result<()> {
-        println!("Handle: UpdateMarket");
+        info!("Handle: UpdateMarket");
         for chunk in assets.data.chunks(self.chunk_size) {
             self._update_market(chunk).await?;
         }
@@ -191,7 +199,7 @@ where
     }
 
     pub async fn update_supply(&mut self) -> eyre::Result<()> {
-        println!("Handle: UpdateSupply");
+        info!("Handle: UpdateSupply");
         let steward = ISteward::new(self.castle_address, &self.provider);
 
         let demand_bytes = steward
@@ -213,9 +221,9 @@ where
             .collect_vec();
 
         for chunk in zipped.chunks(self.chunk_size) {
-            let assets_chunk = chunk.iter().map(|(a, b, c)| *a).collect_vec();
-            let demand_long_chunk = chunk.iter().map(|(a, b, c)| *b).collect_vec();
-            let demand_short_chunk = chunk.iter().map(|(a, b, c)| *c).collect_vec();
+            let assets_chunk = chunk.iter().map(|(a, _, _)| *a).collect_vec();
+            let demand_long_chunk = chunk.iter().map(|(_, b, _)| *b).collect_vec();
+            let demand_short_chunk = chunk.iter().map(|(_, _, c)| *c).collect_vec();
 
             self._submit_supply(
                 Labels { data: assets_chunk },

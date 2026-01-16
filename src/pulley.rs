@@ -1,15 +1,18 @@
 use alloy::{
     primitives::Address,
     providers::{Provider, WalletProvider},
-    rpc::{
-        client::PollerStream,
-        types::{Filter, Log},
-    },
+    rpc::types::Filter,
 };
 use alloy_sol_types::SolEvent;
+use eyre::Context;
 use futures_util::StreamExt;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 
-use crate::{common::labels::Labels, interfaces::vault_native_orders::IVaultNativeOrders};
+use crate::interfaces::{
+    vault_native_claims::IVaultNativeClaims, vault_native_orders::IVaultNativeOrders,
+};
 
 #[derive(Debug)]
 pub enum ChainMessage {
@@ -43,91 +46,136 @@ pub enum ChainMessage {
         burned: u128,
         gains: u128,
     },
+    AcquisitionClaim {
+        controller: Address,
+        index_id: u128,
+        vendor_id: u128,
+        remain: u128,
+        spent: u128,
+    },
+    DisposalClaim {
+        controller: Address,
+        index_id: u128,
+        vendor_id: u128,
+        itp_remain: u128,
+        itp_burned: u128,
+    },
 }
 
-pub struct Pulley<P>
-where
-    P: Provider + WalletProvider + Clone + 'static,
-{
-    _provider: P,
-    stream: PollerStream<Vec<Log>>,
-}
+pub struct Pulley;
 
-impl<P> Pulley<P>
-where
-    P: Provider + WalletProvider + Clone + 'static,
-{
-    pub async fn new(provider: P, vault_address: Address) -> eyre::Result<Self> {
+impl Pulley {
+    pub async fn run<P>(
+        provider: P,
+        vault_address: Address,
+        sender: UnboundedSender<ChainMessage>,
+        cancel: CancellationToken,
+    ) -> eyre::Result<()>
+    where
+        P: Provider + WalletProvider + Clone + 'static,
+    {
+        info!("Pulley loop started...");
+
         let filter = Filter::new().address(vault_address).events(vec![
             IVaultNativeOrders::BuyOrder::SIGNATURE,
             IVaultNativeOrders::SellOrder::SIGNATURE,
             IVaultNativeOrders::Acquisition::SIGNATURE,
             IVaultNativeOrders::Disposal::SIGNATURE,
+            IVaultNativeClaims::AcquisitionClaim::SIGNATURE,
+            IVaultNativeClaims::DisposalClaim::SIGNATURE,
         ]);
 
-        let stream = provider.watch_logs(&filter).await?.into_stream();
+        let mut stream = provider.watch_logs(&filter).await?.into_stream();
 
-        Ok(Self {
-            _provider: provider,
-            stream,
-        })
-    }
-
-    pub async fn get_message(&mut self) -> eyre::Result<Vec<ChainMessage>> {
-        let mut messages = Vec::new();
-
-        while let Some(logs) = self.stream.next().await {
-            for log in logs {
-                if let Ok(event) = log.log_decode::<IVaultNativeOrders::BuyOrder>() {
-                    let event = event.data();
-                    messages.push(ChainMessage::BuyOrder {
-                        keeper: event.keeper,
-                        trader: event.trader,
-                        index_id: event.index_id,
-                        vendor_id: event.vendor_id,
-                        collateral: event.collateral_amount,
-                    });
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    info!("Pulley loop complete.");
+                    return Ok(())
                 }
+                Some(logs) = stream.next() => {
+                    for log in logs {
+                        if let Ok(event) = log.log_decode::<IVaultNativeOrders::BuyOrder>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::BuyOrder {
+                                    keeper: event.keeper,
+                                    trader: event.trader,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    collateral: event.collateral_amount,
+                                })
+                                .context("Failed to send chain event")?;
+                        }
 
-                if let Ok(event) = log.log_decode::<IVaultNativeOrders::SellOrder>() {
-                    let event = event.data();
-                    messages.push(ChainMessage::SellOrder {
-                        keeper: event.keeper,
-                        trader: event.trader,
-                        index_id: event.index_id,
-                        vendor_id: event.vendor_id,
-                        itp_amount: event.itp_amount,
-                    });
-                }
+                        if let Ok(event) = log.log_decode::<IVaultNativeOrders::SellOrder>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::SellOrder {
+                                    keeper: event.keeper,
+                                    trader: event.trader,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    itp_amount: event.itp_amount,
+                                })
+                                .context("Failed to send chain event")?;
+                        }
 
-                if let Ok(event) = log.log_decode::<IVaultNativeOrders::Acquisition>() {
-                    let event = event.data();
-                    messages.push(ChainMessage::Acquisition {
-                        controller: event.controller,
-                        index_id: event.index_id,
-                        vendor_id: event.vendor_id,
-                        remain: event.remain,
-                        spent: event.spent,
-                        minted: event.itp_minted,
-                    });
-                }
+                        if let Ok(event) = log.log_decode::<IVaultNativeOrders::Acquisition>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::Acquisition {
+                                    controller: event.controller,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    remain: event.remain,
+                                    spent: event.spent,
+                                    minted: event.itp_minted,
+                                })
+                                .context("Failed to send chain event")?;
+                        }
 
-                if let Ok(event) = log.log_decode::<IVaultNativeOrders::Disposal>() {
-                    let event = event.data();
-                    messages.push(ChainMessage::Disposal {
-                        controller: event.controller,
-                        index_id: event.index_id,
-                        vendor_id: event.vendor_id,
-                        remain: event.itp_remain,
-                        burned: event.itp_burned,
-                        gains: event.gains,
-                    });
+                        if let Ok(event) = log.log_decode::<IVaultNativeOrders::Disposal>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::Disposal {
+                                    controller: event.controller,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    remain: event.itp_remain,
+                                    burned: event.itp_burned,
+                                    gains: event.gains,
+                                })
+                                .context("Failed to send chain event")?;
+                        }
+                        if let Ok(event) = log.log_decode::<IVaultNativeClaims::AcquisitionClaim>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::AcquisitionClaim {
+                                    controller: event.controller,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    remain: event.remain,
+                                    spent: event.spent
+                                })
+                                .context("Failed to send chain event")?;
+                        }
+                        if let Ok(event) = log.log_decode::<IVaultNativeClaims::DisposalClaim>() {
+                            let event = event.data();
+                            sender
+                                .send(ChainMessage::DisposalClaim {
+                                    controller: event.controller,
+                                    index_id: event.index_id,
+                                    vendor_id: event.vendor_id,
+                                    itp_remain: event.itp_remain,
+                                    itp_burned: event.itp_burned 
+                                })
+                                .context("Failed to send chain event")?;
+
+                        }
+                    }
                 }
             }
-
-            eyre::bail!("Event stream closed unexpectedly")
         }
-
-        Ok(messages)
     }
 }

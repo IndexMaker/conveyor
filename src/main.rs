@@ -7,6 +7,11 @@ use alloy::{
 use clap::Parser;
 use conveyor::{app::App, keeper::Keeper, pulley::Pulley, vendor::Vendor};
 use eyre::bail;
+use tokio::{
+    signal::unix::{SignalKind, signal},
+    sync::mpsc::unbounded_channel,
+};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -40,7 +45,7 @@ struct Args {
 
     #[arg(long, default_value = "3")]
     index_size: usize,
-    
+
     #[arg(long, default_value = "500")]
     chunk_size: usize,
 }
@@ -114,7 +119,7 @@ async fn main() -> eyre::Result<()> {
         "Configured Market"
     );
 
-    keeper.setup(args.index_size).await?;
+    keeper.setup(vendor.get_market_assets(), args.index_size).await?;
 
     let vault_address = keeper.get_vault_address();
     if vault_address.is_zero() {
@@ -127,12 +132,42 @@ async fn main() -> eyre::Result<()> {
         "Configured Index / Vault"
     );
 
-    let pulley = Pulley::new(provider, vault_address).await?;
+    info!("Cranking pulley...");
 
-    let mut app = App::new(keeper, vendor, pulley);
+    let (tx, rx) = unbounded_channel();
 
-    if let Err(err) = app.run().await {
+    let cancel_token = CancellationToken::new();
+    let pulley_task = tokio::spawn(Pulley::run(
+        provider,
+        vault_address,
+        tx,
+        cancel_token.clone(),
+    ));
+
+    info!("Starting app...");
+
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigquit = signal(SignalKind::quit())?;
+
+    let cancel_token_clone = cancel_token.clone();
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigint.recv() => cancel_token_clone.cancel(),
+            _ = sigterm.recv() => cancel_token_clone.cancel(),
+            _ = sigquit.recv() => cancel_token_clone.cancel(),
+        }
+    });
+
+    let mut app = App::new(keeper, vendor);
+
+    if let Err(err) = app.run(rx, cancel_token.clone()).await {
         error!("Error while running app: {:?}", err);
+    }
+
+    info!("Terminating app...");
+    if let Err(err) = pulley_task.await {
+        error!("Error while terminating: {:?}", err);
     }
 
     Ok(())

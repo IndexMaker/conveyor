@@ -1,9 +1,7 @@
-use crate::{
-    keeper::Keeper,
-    pulley::{ChainMessage, Pulley},
-    vendor::Vendor,
-};
+use crate::{keeper::Keeper, pulley::ChainMessage, vendor::Vendor};
 use alloy::providers::{Provider, WalletProvider};
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub struct App<P>
@@ -12,19 +10,14 @@ where
 {
     keeper: Keeper<P>,
     vendor: Vendor<P>,
-    pulley: Pulley<P>,
 }
 
 impl<P> App<P>
 where
     P: Provider + WalletProvider + Clone + 'static,
 {
-    pub fn new(keeper: Keeper<P>, vendor: Vendor<P>, pulley: Pulley<P>) -> Self {
-        Self {
-            keeper,
-            vendor,
-            pulley,
-        }
+    pub fn new(keeper: Keeper<P>, vendor: Vendor<P>) -> Self {
+        Self { keeper, vendor }
     }
 
     pub async fn process_chain_message(&mut self, message: ChainMessage) -> eyre::Result<()> {
@@ -47,8 +40,9 @@ where
                 if self.keeper.get_index_id() == index_id
                     && self.vendor.get_vendor_id() == vendor_id
                 {
-                    let assets = self.keeper.get_assets(index_id);
+                    let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
+                    self.keeper.update_quote().await?;
                     self.keeper.buy_order().await?;
                 }
             }
@@ -70,8 +64,9 @@ where
                 if self.keeper.get_index_id() == index_id
                     && self.vendor.get_vendor_id() == vendor_id
                 {
-                    let assets = self.keeper.get_assets(index_id);
+                    let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
+                    self.keeper.update_quote().await?;
                     self.keeper.sell_order().await?;
                 }
             }
@@ -117,17 +112,68 @@ where
                     self.vendor.update_supply().await?;
                 }
             }
+            ChainMessage::AcquisitionClaim {
+                controller,
+                index_id,
+                vendor_id,
+                remain,
+                spent,
+            } => {
+                info!(
+                    %controller,
+                    %index_id,
+                    %vendor_id,
+                    %remain,
+                    %spent,
+                    "ChainMessage::AcquisitionClaim"
+                );
+                if 100 < remain {
+                    let assets = self.keeper.get_assets();
+                    self.vendor.update_market(assets).await?;
+                    self.keeper.update_quote().await?;
+                    self.keeper.buy_order().await?;
+                }
+            }
+            ChainMessage::DisposalClaim {
+                controller,
+                index_id,
+                vendor_id,
+                itp_remain,
+                itp_burned,
+            } => {
+                info!(
+                    %controller,
+                    %index_id,
+                    %vendor_id,
+                    %itp_remain,
+                    %itp_burned,
+                    "ChainMessage::DisposalClaim"
+                );
+                if 100 < itp_remain {
+                    let assets = self.keeper.get_assets();
+                    self.vendor.update_market(assets).await?;
+                    self.keeper.update_quote().await?;
+                    self.keeper.sell_order().await?;
+                }
+            }
         }
         Ok(())
     }
 
-    pub async fn run(&mut self) -> eyre::Result<()> {
+    pub async fn run(
+        &mut self,
+        mut recv: UnboundedReceiver<ChainMessage>,
+        cancel: CancellationToken,
+    ) -> eyre::Result<()> {
+        info!("App loop started...");
         loop {
             tokio::select! {
-                Ok(messages) = self.pulley.get_message() => {
-                    for message in messages {
-                        self.process_chain_message(message).await?;
-                    }
+                _ = cancel.cancelled() => {
+                    info!("App loop complete.");
+                    return Ok(())
+                }
+                Some(message) = recv.recv() => {
+                    self.process_chain_message(message).await?;
                 }
             }
         }
