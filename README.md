@@ -53,7 +53,7 @@ conveyor::app: ✅ App loop started...
 ```
 
 The *Vault Address* of newly deployed *Vault* will be printed, so we can place orders to that *Vault* using another private key (as user).
-See [*VaultWorks* README](https://github.com/IndexMaker/vaultworks/blob/main/apps/scenarios/README.md) for details.
+See [*VaultWorks* README](https://github.com/IndexMaker/vaultworks/blob/main/README.md) for details.
 
 In the trader's environment we can now place orders.
 
