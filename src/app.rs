@@ -4,12 +4,15 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+const REBALANCE_FREQUENCY: usize = 12;
+
 pub struct App<P>
 where
     P: Provider + WalletProvider + Clone + 'static,
 {
     keeper: Keeper<P>,
     vendor: Vendor<P>,
+    rebalance_counter: usize,
 }
 
 impl<P> App<P>
@@ -17,10 +20,14 @@ where
     P: Provider + WalletProvider + Clone + 'static,
 {
     pub fn new(keeper: Keeper<P>, vendor: Vendor<P>) -> Self {
-        Self { keeper, vendor }
+        Self {
+            keeper,
+            vendor,
+            rebalance_counter: 0,
+        }
     }
 
-    pub async fn process_chain_message(&mut self, message: ChainMessage) -> eyre::Result<()> {
+    async fn _process_chain_message(&mut self, message: ChainMessage) -> eyre::Result<()> {
         match message {
             ChainMessage::BuyOrder {
                 keeper,
@@ -45,6 +52,7 @@ where
                     self.keeper.log_pending_order().await?;
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
+                    self.keeper.rebalance_order().await?;
                     self.keeper.buy_order().await?;
                     self.keeper.log_pending_order().await?;
                 }
@@ -72,6 +80,7 @@ where
                     self.keeper.log_pending_order().await?;
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
+                    self.keeper.rebalance_order().await?;
                     self.keeper.sell_order().await?;
                     self.keeper.log_pending_order().await?;
                 }
@@ -139,6 +148,7 @@ where
                     let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
+                    self.keeper.rebalance_order().await?;
                     self.keeper.buy_order().await?;
                     self.keeper.log_pending_order().await?;
                     self.keeper.log_trader_order(trader).await?;
@@ -165,12 +175,28 @@ where
                     let assets = self.keeper.get_assets();
                     self.vendor.update_market(assets).await?;
                     self.keeper.update_quote().await?;
+                    self.keeper.rebalance_order().await?;
                     self.keeper.sell_order().await?;
                     self.keeper.log_pending_order().await?;
                     self.keeper.log_trader_order(trader).await?;
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn _maybe_rebalance(&mut self) -> eyre::Result<()> {
+        self.rebalance_counter += 1;
+
+        if 0 == self.rebalance_counter % REBALANCE_FREQUENCY {
+            let assets = self.keeper.get_assets();
+            let market_assets = self.vendor.get_market_assets();
+
+            self.keeper
+                .update_weights(market_assets, assets.data.len())
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -187,7 +213,8 @@ where
                     return Ok(())
                 }
                 Some(message) = recv.recv() => {
-                    self.process_chain_message(message).await?;
+                    self._process_chain_message(message).await?;
+                    self._maybe_rebalance().await?;
                 }
             }
         }

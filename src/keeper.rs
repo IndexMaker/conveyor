@@ -19,7 +19,8 @@ use crate::{
         vector::Vector,
     },
     interfaces::{
-        alchemist::IAlchemist, banker::IBanker, guildmaster::IGuildmaster, steward::ISteward, vault_native_orders::IVaultNativeOrders
+        alchemist::IAlchemist, banker::IBanker, guildmaster::IGuildmaster, steward::ISteward,
+        vault_native_orders::IVaultNativeOrders,
     },
 };
 
@@ -87,7 +88,7 @@ where
 
     pub async fn setup(&mut self, market_assets: &Labels, index_size: usize) -> eyre::Result<()> {
         info!("Handle: Keeper Setup");
-        let alchemist = IAlchemist::new(self.castle_address, &self.provider);
+
         let guildmaster = IGuildmaster::new(self.castle_address, &self.provider);
         let keeper = self.provider.default_signer_address();
         let max_order_size = Amount::from_u128_with_scale(100, 0);
@@ -148,6 +149,18 @@ where
 
         debug!("Vote receipt: {:?}", vote_receipt);
 
+        self.update_weights(market_assets, index_size).await?;
+
+        Ok(())
+    }
+
+    pub async fn update_weights(
+        &mut self,
+        market_assets: &Labels,
+        index_size: usize,
+    ) -> eyre::Result<()> {
+        let alchemist = IAlchemist::new(self.castle_address, &self.provider);
+
         let assets = rand_pick_assets(market_assets, index_size);
 
         let mut weight_gen = ValueGen::new(1_00, 10_00, 2);
@@ -155,7 +168,7 @@ where
             data: assets.data.iter().map(|_| weight_gen.next()).collect_vec(),
         };
 
-        info!("Submitting asset weights...");
+        info!("⚖️  Submitting asset weights...");
         let submit_asset_weights = alchemist
             .submitAssetWeights(
                 self.index_id,
@@ -261,6 +274,31 @@ where
         }
 
         debug!("Update pending Sell order receipt: {:?}", receipt);
+
+        Ok(())
+    }
+
+    pub async fn rebalance_order(&mut self) -> eyre::Result<()> {
+        info!("🛳️  Handle: Rebalance");
+        let alchemist = IAlchemist::new(self.castle_address, &self.provider);
+
+        let capacity_factor = Amount::from_u128_with_scale(0_38, 3);
+        let request = alchemist
+            .processPendingRebalance(self.vendor_id, self.index_id, capacity_factor.to_u128_raw())
+            .send()
+            .await
+            .context("Failed to process pending Rebalance order")?;
+
+        let receipt = request
+            .get_receipt()
+            .await
+            .context("Failed to confirm process pending Rebalance order")?;
+
+        if !receipt.status() {
+            bail!("Failed to process pending Rebalance order: {:?}", receipt)
+        }
+
+        debug!("Update pending Rebalance order receipt: {:?}", receipt);
 
         Ok(())
     }
