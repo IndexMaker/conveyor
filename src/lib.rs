@@ -1,4 +1,5 @@
 pub mod interfaces {
+    pub mod alchemist;
     pub mod banker;
     pub mod castle;
     pub mod clerk;

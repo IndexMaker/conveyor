@@ -9,8 +9,6 @@ sol! {
 
         function finishEditIndex(uint128 index_id) external;
 
-        function submitAssetWeights(uint128 index_id, bytes calldata asset_names, bytes calldata asset_weights) external;
-
         function submitVote(uint128 index_id, bytes calldata vote) external;
 
         event BeginEditIndex(uint128 index_id, address sender);
@@ -18,8 +16,6 @@ sol! {
         event FinishEditIndex(uint128 index_id, address sender);
 
         event IndexCreated(uint128 index_id, string name, string symbol, address vault);
-        
-        event IndexWeightsUpdated(uint128 index_id, address sender);
         
         event IndexVoteUpdated(uint128 index_id, address sender);
     }

@@ -19,8 +19,7 @@ use crate::{
         vector::Vector,
     },
     interfaces::{
-        banker::IBanker, guildmaster::IGuildmaster, steward::ISteward,
-        vault_native_orders::IVaultNativeOrders,
+        alchemist::IAlchemist, banker::IBanker, guildmaster::IGuildmaster, steward::ISteward, vault_native_orders::IVaultNativeOrders
     },
 };
 
@@ -88,6 +87,7 @@ where
 
     pub async fn setup(&mut self, market_assets: &Labels, index_size: usize) -> eyre::Result<()> {
         info!("Handle: Keeper Setup");
+        let alchemist = IAlchemist::new(self.castle_address, &self.provider);
         let guildmaster = IGuildmaster::new(self.castle_address, &self.provider);
         let keeper = self.provider.default_signer_address();
         let max_order_size = Amount::from_u128_with_scale(100, 0);
@@ -156,7 +156,7 @@ where
         };
 
         info!("Submitting asset weights...");
-        let submit_asset_weights = guildmaster
+        let submit_asset_weights = alchemist
             .submitAssetWeights(
                 self.index_id,
                 assets.to_vec().into(),
